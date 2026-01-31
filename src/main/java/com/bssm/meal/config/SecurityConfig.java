@@ -25,42 +25,42 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtFilter;
 
-    // ✅ [해결책 1] 시큐리티의 모든 필터(JWT 포함)를 아예 거치지 않도록 완전 제외
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring()
-                .requestMatchers("/api/notifications/subscribe/**")
-                .requestMatchers("/uploads/**", "/favicon.ico");
+                // 정적 리소스 및 파비콘 완전 허용 (403 방지)
+                .requestMatchers("/favicon.ico", "/error", "/uploads/**", "/static/**", "/css/**", "/js/**");
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                // ✅ [해결책 2] CORS 설정을 필터 체인 최상단에서 적용
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. 로그인 및 인증 관련 경로
+                        // 1. 루트 경로 및 기본 에러 페이지 허용 (브라우저 접속 확인용)
+                        .requestMatchers("/", "/error").permitAll()
+
+                        // 2. 로그인 및 인증 관련 경로
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/**", "/api/auth/**").permitAll()
-                        // 2. 급식 및 랭킹 (누구나 조회 가능)
+
+                        // 3. 급식 및 랭킹 조회 (누구나 가능)
                         .requestMatchers("/api/meals/**", "/api/likes/ranking", "/api/main/**").permitAll()
-                        // 3. 알림 (최근 공지 조회 등)
+
+                        // 4. 알림 관련 (SSE 포함)
                         .requestMatchers("/api/notifications/latest", "/api/notifications/subscribe/**").permitAll()
 
-                        // 4. 관리자 전용
+                        // 5. 관리자 및 유저 전용 (인증 필요)
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                        // 5. 유저 인증 필수 경로
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/likes/toggle").authenticated()
                         .requestMatchers("/api/likes/user/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/reports").authenticated()
 
-                        // 6. 나머지는 인증 필요
+                        // 6. 나머지는 일단 인증 필요 (테스트 중 안되면 permitAll로 잠시 변경 가능)
                         .anyRequest().authenticated()
                 )
-                // JWT 필터 위치 지정
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -69,13 +69,18 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // 프론트엔드 주소 (정확히 명시)
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
+
+        // ✅ DuckDNS 외부 주소와 프론트엔드 포트 모두 허용
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://bssmmeal-alert.duckdns.org",
+                "http://bssmmeal-alert.duckdns.org:8080"
+        ));
+
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
-
-        // SSE 통신을 위한 필수 헤더 노출
         configuration.setExposedHeaders(List.of("Authorization", "Cache-Control", "Content-Type", "Last-Event-ID"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
