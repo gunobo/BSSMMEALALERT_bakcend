@@ -9,7 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -21,7 +24,7 @@ public class NoticeController {
     private final UserRepository userRepository;
 
     /**
-     * 1. 최신 공지사항 단건 조회
+     * 1. [홈피 접속용] 최신 공지사항 단건 조회
      */
     @GetMapping("/latest")
     public ResponseEntity<Notification> getLatestNotice() {
@@ -29,15 +32,43 @@ public class NoticeController {
     }
 
     /**
-     * 2. SSE 실시간 구독
-     * {id}를 사용하여 유저의 고유 식별자(PK 또는 이메일)를 받습니다.
-     * 정규표현식 {id:.+} 을 사용하여 이메일에 포함된 마침표(.)가 잘리지 않도록 합니다.
+     * 2. [게시판 목록용] 전체 공지사항 조회 (타입이 'NOTICE'인 것만 서비스에서 필터링됨)
+     */
+    @GetMapping("/all")
+    public ResponseEntity<List<Notification>> getAllNotices() {
+        return ResponseEntity.ok(notificationService.getAllNotices());
+    }
+
+    /**
+     * 3. [상세 페이지용] 공지사항 상세 조회
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<Notification> getNotice(@PathVariable Long id) {
+        return ResponseEntity.ok(notificationService.getNoticeById(id));
+    }
+
+    /**
+     * 4. [게시판용] 공지사항 등록
+     * 게시판에 글을 쓸 때는 실시간 알람(SSE)이 가지 않도록 설정 (false)
+     * 타입은 "NOTICE"로 지정하여 저장합니다.
+     */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Notification> createNotice(
+            @RequestPart("title") String title,
+            @RequestPart("content") String content,
+            @RequestPart(value = "file", required = false) MultipartFile file) {
+
+        // ✅ 수정: 인자 5개를 전달합니다 (제목, 내용, 파일, 실시간알림여부, 타입)
+        return ResponseEntity.ok(notificationService.saveNoticeWithFile(title, content, file, false, "NOTICE"));
+    }
+
+    /**
+     * 5. SSE 실시간 구독
      */
     @GetMapping(value = "/subscribe/{id:.+}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(@PathVariable("id") String id) {
         log.info("🔔 SSE 구독 요청 - 식별자: {}", id);
 
-        // 1. 입력받은 값이 이메일 형식인 경우와 ID(숫자) 형식인 경우를 모두 대응합니다.
         User user;
         if (id.contains("@")) {
             user = userRepository.findByEmail(id)
@@ -52,7 +83,6 @@ public class NoticeController {
             }
         }
 
-        // 2. 서비스 레이어에 유저 PK(Long) 전달
         return notificationService.subscribe(user.getId());
     }
 }

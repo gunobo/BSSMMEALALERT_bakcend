@@ -1,6 +1,7 @@
 package com.bssm.meal.admin.service;
 
 import com.bssm.meal.admin.dto.AdminStatsResponse;
+import com.bssm.meal.admin.dto.UserDetailResponse; // ✅ DTO 추가
 import com.bssm.meal.like.repository.LikeRepository;
 import com.bssm.meal.user.repository.UserRepository;
 import com.bssm.meal.report.repository.ReportRepository;
@@ -10,6 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -19,7 +23,22 @@ public class AdminService {
 
     private final UserRepository userRepository;
     private final LikeRepository likeRepository;
-    private final ReportRepository reviewRepository;
+    private final ReportRepository reviewRepository; // (변수명은 유지하되 타입은 ReportRepository)
+
+    /**
+     * ✅ [추가] 관리자 페이지용 전체 사용자 상세 목록 조회
+     */
+    public List<UserDetailResponse> getAllUsersForAdmin() {
+        return userRepository.findAll().stream()
+                .map(user -> UserDetailResponse.builder()
+                        .id(user.getUserId()) // 또는 user.getId() (엔티티 필드명에 맞춰 수정)
+                        .email(user.getEmail())
+                        // 리스트가 null일 경우 프론트 map 에러 방지를 위해 빈 리스트 처리
+                        .allergies(Optional.ofNullable(user.getAllergies()).orElse(Collections.emptyList()))
+                        .favoriteMenus(Optional.ofNullable(user.getFavoriteMenus()).orElse(Collections.emptyList()))
+                        .build())
+                .collect(Collectors.toList());
+    }
 
     /**
      * 리액트 관리자 페이지(AdminPage)에서 필요한 모든 통계 데이터를 한 번에 조회
@@ -28,15 +47,15 @@ public class AdminService {
         // 1. 전체 사용자 수 조회
         long totalUsers = userRepository.count();
 
-        // 2. 오늘의 좋아요 수 조회 (오늘 00:00:00 이후 생성된 데이터 기준)
+        // 2. 오늘의 좋아요 수 조회
         long todayLikes = likeRepository.countByCreatedAtAfter(LocalDate.now().atStartOfDay());
 
-        // 3. 신고된 리뷰 목록 가공 (userEmail 필드 추가 매핑)
+        // 3. 신고된 리뷰 목록 가공
         var reportedReviews = reviewRepository.findByIsReportedTrue().stream()
                 .map(r -> AdminStatsResponse.ReportDto.builder()
                         .id(r.getId())
                         .userName(r.getUser().getName())
-                        .userEmail(r.getUser().getEmail()) // ✅ 이메일 정보 추가
+                        .userEmail(r.getUser().getEmail())
                         .content(r.getContent())
                         .reason(r.getReportReason())
                         .build())
@@ -53,7 +72,6 @@ public class AdminService {
                         .build())
                 .collect(Collectors.toList());
 
-        // 최종 DTO 조립
         return AdminStatsResponse.builder()
                 .totalUsers(totalUsers)
                 .todayLikes(todayLikes)
@@ -61,16 +79,25 @@ public class AdminService {
                 .popularMenus(popularMenus)
                 .build();
     }
+
+    /**
+     * 신고 처리 (상태 변경)
+     */
     @Transactional
     public void processReport(Long reportId) {
-        // 1. 엔티티 조회 (reviewRepository가 관리하는 엔티티에 따라 수정)
         var review = reviewRepository.findById(reportId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 신고 내역이 없습니다."));
-
-        // 2. 상태 변경 (Setter가 있으면 setIsReported, 없으면 만든 메서드 호출)
         review.setIsReported(false);
-        // 또는 review.updateReportStatus(false);
+    }
 
-        // ✅ @Transactional이 붙어있으므로 별도의 save() 호출 없이도 DB에 반영됩니다(Dirty Checking).
+    /**
+     * ✅ [추가] 신고 게시글 삭제
+     */
+    @Transactional
+    public void deleteReport(Long reportId) {
+        if (!reviewRepository.existsById(reportId)) {
+            throw new IllegalArgumentException("삭제할 신고 내역이 존재하지 않습니다.");
+        }
+        reviewRepository.deleteById(reportId);
     }
 }

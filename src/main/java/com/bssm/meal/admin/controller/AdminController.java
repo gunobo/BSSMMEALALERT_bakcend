@@ -1,6 +1,7 @@
 package com.bssm.meal.admin.controller;
 
 import com.bssm.meal.admin.dto.AdminStatsResponse;
+import com.bssm.meal.admin.dto.UserDetailResponse; // 추가 필요
 import com.bssm.meal.admin.service.AdminService;
 import com.bssm.meal.admin.service.NotificationService;
 import com.bssm.meal.service.EmailService;
@@ -12,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -21,37 +24,58 @@ public class AdminController {
     private final AdminService adminService;
     private final EmailService emailService;
 
+    /**
+     * ✅ [추가] 전체 사용자 목록 조회
+     * 프론트엔드의 UserManagement 컴포넌트에서 호출합니다.
+     */
+    @GetMapping("/users")
+    public ResponseEntity<List<UserDetailResponse>> getAllUsers() {
+        List<UserDetailResponse> users = adminService.getAllUsersForAdmin();
+        return ResponseEntity.ok(users);
+    }
+
+    /**
+     * 전역 알림 전송
+     */
     @PostMapping(value = "/notifications", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> sendNotice(
             @RequestParam("title") String title,
             @RequestParam("content") String content,
             @RequestParam(value = "file", required = false) MultipartFile file
     ) {
-        notificationService.sendGlobalNotice(title, content, file);
-        return ResponseEntity.ok("알림 및 이미지 전송 완료");
+        notificationService.saveNoticeWithFile(title, content, file, true, "ALARM");
+        return ResponseEntity.ok("실시간 알림 전송 완료");
     }
 
+    /**
+     * 관리자 통계 데이터 조회
+     */
     @GetMapping("/stats")
     public ResponseEntity<AdminStatsResponse> getStats() {
         AdminStatsResponse stats = adminService.getOverallStats();
         return ResponseEntity.ok(stats);
     }
 
+    /**
+     * 신고 게시글 삭제
+     */
     @DeleteMapping("/reports/{id}")
-    public ResponseEntity<?> deleteReport(@PathVariable Long id) {
-        // 여기에 실제 DB 삭제 로직을 추가하세요 (예: reportService.delete(id);)
+    public ResponseEntity<Void> deleteReport(@PathVariable Long id) {
+        // ✅ 수정: 서비스 로직 연결
+        adminService.deleteReport(id);
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * 신고 처리 및 결과 메일 발송
+     */
     @PostMapping("/reports/{id}/process")
     public ResponseEntity<String> processReport(
             @PathVariable Long id,
             @RequestBody ReportProcessRequest request) {
 
-        // 1. DB 상태 변경 (이제 목록 조회 시 나타나지 않음)
         adminService.processReport(id);
 
-        // 2. 메일 발송
         emailService.sendReportResult(
                 request.getUserEmail(),
                 request.getStatus(),
@@ -63,13 +87,12 @@ public class AdminController {
 }
 
 /**
- * ✅ 에러 해결: 데이터를 담을 DTO 클래스 추가
- * 이 클래스가 있어야 request.getUserEmail() 등을 사용할 수 있습니다.
+ * 요청/응답을 위한 DTO 클래스들
  */
 @Getter
 @NoArgsConstructor
 class ReportProcessRequest {
-    private String status;    // RESOLVED 또는 REJECTED
-    private String message;   // 관리자 답변 내용
-    private String userEmail; // 신고자 이메일
+    private String status;
+    private String message;
+    private String userEmail;
 }

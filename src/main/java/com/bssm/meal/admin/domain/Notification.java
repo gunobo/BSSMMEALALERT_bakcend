@@ -22,6 +22,8 @@ public class Notification {
 
     private LocalDateTime createdAt;
 
+    private String type; // "NOTICE" (게시판용), "ALARM" (알림 팝업 전용)
+
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();

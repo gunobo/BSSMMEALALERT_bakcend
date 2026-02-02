@@ -7,8 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Getter // ✅ 수동 Getter 대신 Lombok 사용 (코드 간결화)
-@Setter // ✅ 수동 Setter 대신 Lombok 사용 (실수 방지)
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -25,7 +25,6 @@ public class User {
     private String picture;
     private String googleId;
 
-    // ✅ 필드 초기화와 Builder.Default를 함께 사용해야 Null 에러가 안 납니다.
     @Builder.Default
     @Column(nullable = false)
     private String role = "USER";
@@ -42,10 +41,20 @@ public class User {
     @Builder.Default
     private List<String> favoriteMenus = new ArrayList<>();
 
+    // 스프링 시큐리티나 Map.of 등에서 쓰일 수 있도록 명시적 Getter
     public String getRole() {
-        return this.role; // 이 메서드가 없으면 Map.of에서 null이 들어갑니다.
+        return this.role;
     }
-    // Lombok @Getter/Setter가 아래 수동 메서드들을 자동으로 생성해줍니다.
+
+    // 관리자 페이지 DTO 매핑용 메서드 추가
+    // 프론트엔드에서 u.id로 표시될 값을 반환합니다.
+    public String getUserId() {
+        return this.email; // 이메일을 ID로 사용하거나, String.valueOf(this.id)를 사용하세요.
+    }
+
+    /**
+     * Role 설정 시 "ROLE_" 접두사 자동 처리
+     */
     public void setRole(String role) {
         if (role != null && !role.startsWith("ROLE_")) {
             this.role = "ROLE_" + role;
