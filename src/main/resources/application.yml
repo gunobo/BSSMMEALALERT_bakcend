@@ -15,7 +15,9 @@ spring:
           starttls:
             enable: true
           timeout: 5000
+
   jpa:
+    open-in-view: false  # 👈 이 줄을 추가해 주세요!
     hibernate:
       ddl-auto: update
     show-sql: true
