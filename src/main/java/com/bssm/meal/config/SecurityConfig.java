@@ -43,6 +43,7 @@ public class SecurityConfig {
                         // 1. 공개 허용 경로
                         .requestMatchers("/", "/error", "/auth/**", "/oauth2/**", "/login/**", "/api/auth/**").permitAll()
                         .requestMatchers("/api/meals/**", "/api/likes/ranking", "/api/main/**").permitAll()
+                        .requestMatchers("/api/user/update-info").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/api/notifications/latest", "/api/notifications/subscribe/**").permitAll()
 
                         // 2. 권한 필요 경로

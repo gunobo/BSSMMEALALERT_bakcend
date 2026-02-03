@@ -7,4 +7,5 @@ import lombok.Setter;
 public class NoticeRequest {
     private String title;
     private String content;
+    private String type; // "NOTICE"
 }

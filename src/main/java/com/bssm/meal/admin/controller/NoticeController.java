@@ -32,7 +32,7 @@ public class NoticeController {
     }
 
     /**
-     * 2. [게시판 목록용] 전체 공지사항 조회 (타입이 'NOTICE'인 것만 서비스에서 필터링됨)
+     * 2. [게시판 목록용] 전체 공지사항 조회
      */
     @GetMapping("/all")
     public ResponseEntity<List<Notification>> getAllNotices() {
@@ -49,8 +49,6 @@ public class NoticeController {
 
     /**
      * 4. [게시판용] 공지사항 등록
-     * 게시판에 글을 쓸 때는 실시간 알람(SSE)이 가지 않도록 설정 (false)
-     * 타입은 "NOTICE"로 지정하여 저장합니다.
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Notification> createNotice(
@@ -58,12 +56,38 @@ public class NoticeController {
             @RequestPart("content") String content,
             @RequestPart(value = "file", required = false) MultipartFile file) {
 
-        // ✅ 수정: 인자 5개를 전달합니다 (제목, 내용, 파일, 실시간알림여부, 타입)
         return ResponseEntity.ok(notificationService.saveNoticeWithFile(title, content, file, false, "NOTICE"));
     }
 
     /**
-     * 5. SSE 실시간 구독
+     * ✅ 5. [게시판용] 공지사항 수정 (추가)
+     * 프론트엔드의 axios.put 요청을 처리합니다.
+     */
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Notification> updateNotice(
+            @PathVariable Long id,
+            @RequestPart("title") String title,
+            @RequestPart("content") String content,
+            @RequestPart(value = "file", required = false) MultipartFile file) {
+
+        log.info("📝 공지사항 수정 요청 - ID: {}", id);
+        // NotificationService에 updateNoticeWithFile 메서드를 구현해야 합니다.
+        return ResponseEntity.ok(notificationService.updateNoticeWithFile(id, title, content, file));
+    }
+
+    /**
+     * ✅ 6. [게시판용] 공지사항 삭제 (추가)
+     * 프론트엔드의 axios.delete 요청을 처리합니다.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteNotice(@PathVariable Long id) {
+        log.info("🗑️ 공지사항 삭제 요청 - ID: {}", id);
+        notificationService.deleteNotice(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 7. SSE 실시간 구독
      */
     @GetMapping(value = "/subscribe/{id:.+}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(@PathVariable("id") String id) {

@@ -33,7 +33,7 @@ public class NotificationService {
     private final String uploadPath = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "notices" + File.separator;
 
     /**
-     * 1. [홈페이지용] 가장 최근 'NOTICE' 타입 공지사항 1건 조회
+     * 1. [홈페이지용] 가장 최근 공지사항 조회
      */
     @Transactional(readOnly = true)
     public Notification getLatestNotice() {
@@ -41,7 +41,7 @@ public class NotificationService {
     }
 
     /**
-     * 2. [게시판용] 'NOTICE' 타입의 모든 공지사항 리스트 조회 (최신순)
+     * 2. [게시판용] 전체 공지사항 리스트 조회 (최신순)
      */
     @Transactional(readOnly = true)
     public List<Notification> getAllNotices() {
@@ -59,61 +59,119 @@ public class NotificationService {
 
     /**
      * 4. 공지사항 저장 및 알림 처리
-     * @param sendAlert true일 때만 SSE 실시간 알림을 보냄
      */
     @Transactional
     public Notification saveNoticeWithFile(String title, String content, MultipartFile file, boolean sendAlert, String type) {
-        String imageUrl = null;
-
-        if (file != null && !file.isEmpty()) {
-            try {
-                File folder = new File(uploadPath);
-                if (!folder.exists()) folder.mkdirs();
-
-                String originalName = file.getOriginalFilename();
-                String fileName = UUID.randomUUID().toString() + "_" + originalName;
-                Path path = Paths.get(uploadPath + fileName);
-
-                Files.write(path, file.getBytes());
-                imageUrl = "/uploads/notices/" + fileName;
-            } catch (IOException e) {
-                log.error("이미지 저장 실패: {}", e.getMessage());
-                throw new RuntimeException("이미지 저장 중 오류 발생", e);
-            }
-        }
+        String imageUrl = saveFile(file);
 
         Notification notice = Notification.builder()
                 .title(title)
                 .content(content)
                 .imageUrl(imageUrl)
-                .type(type) // "NOTICE" 또는 "ALARM"
+                .type(type)
                 .createdAt(LocalDateTime.now())
                 .build();
 
         Notification savedNotice = notificationRepository.save(notice);
 
-        // ✅ [중요] sendAlert가 true인 경우에만 알림 로직 실행
         if (sendAlert) {
-            log.info("🔔 실시간 알림(SSE) 발송 시작: {}", savedNotice.getTitle());
             sendSseNotification(savedNotice);
-        } else {
-            log.info("📝 일반 게시글 저장 완료 (알림 미발송): {}", savedNotice.getTitle());
         }
 
         return savedNotice;
     }
 
     /**
-     * 5. SSE 구독 설정
+     * ✅ 5. 공지사항 수정 (추가)
+     * 마크다운 본문과 이미지 수정을 처리합니다.
+     */
+    @Transactional
+    public Notification updateNoticeWithFile(Long id, String title, String content, MultipartFile file) {
+        Notification notice = notificationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("수정할 게시글이 존재하지 않습니다. ID: " + id));
+
+        // 1. 기본 필드 업데이트 (Dirty Checking)
+        notice.setTitle(title);
+        notice.setContent(content);
+
+        // 2. 새 이미지 파일이 업로드된 경우
+        if (file != null && !file.isEmpty()) {
+            // 기존 파일이 있다면 삭제 (서버 용량 관리)
+            deleteActualFile(notice.getImageUrl());
+
+            // 새 파일 저장 및 경로 업데이트
+            String newImageUrl = saveFile(file);
+            notice.setImageUrl(newImageUrl);
+        }
+
+        log.info("📝 공지사항 수정 완료: {}", id);
+        return notice;
+    }
+
+    /**
+     * ✅ 6. 공지사항 삭제 (추가)
+     * DB 데이터와 실제 서버의 이미지 파일을 함께 삭제합니다.
+     */
+    @Transactional
+    public void deleteNotice(Long id) {
+        Notification notice = notificationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("삭제할 게시글이 존재하지 않습니다. ID: " + id));
+
+        // 실제 이미지 파일 삭제
+        deleteActualFile(notice.getImageUrl());
+
+        // DB 레코드 삭제
+        notificationRepository.delete(notice);
+        log.info("🗑️ 공지사항 삭제 완료: {}", id);
+    }
+
+    /**
+     * [내부 로직] 파일 저장 처리
+     */
+    private String saveFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) return null;
+
+        try {
+            File folder = new File(uploadPath);
+            if (!folder.exists()) folder.mkdirs();
+
+            String fileName = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
+            Path path = Paths.get(uploadPath + fileName);
+            Files.write(path, file.getBytes());
+
+            return "/uploads/notices/" + fileName;
+        } catch (IOException e) {
+            log.error("이미지 저장 실패: {}", e.getMessage());
+            throw new RuntimeException("이미지 저장 중 오류 발생", e);
+        }
+    }
+
+    /**
+     * [내부 로직] 실제 서버 파일 삭제
+     */
+    private void deleteActualFile(String imageUrl) {
+        if (imageUrl == null || !imageUrl.startsWith("/uploads/")) return;
+
+        try {
+            // URL 경로를 실제 파일 경로로 변환
+            String fileName = imageUrl.replace("/uploads/notices/", "");
+            Path filePath = Paths.get(uploadPath + fileName);
+            Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.warn("파일 삭제 실패 (경로가 유효하지 않음): {}", imageUrl);
+        }
+    }
+
+    /**
+     * 7. SSE 구독 설정
      */
     public SseEmitter subscribe(Long userId) {
-        // 기존 연결이 있다면 명시적으로 종료 후 새로 생성 (중복 알림 방지)
         if (emitters.containsKey(userId)) {
             emitters.get(userId).complete();
             emitters.remove(userId);
         }
 
-        SseEmitter emitter = new SseEmitter(30L * 60 * 1000); // 30분
+        SseEmitter emitter = new SseEmitter(30L * 60 * 1000);
 
         try {
             emitter.send(SseEmitter.event().name("connect").data("connected!"));
@@ -137,18 +195,12 @@ public class NotificationService {
      * [내부 로직] 실시간 알림 전송
      */
     private void sendSseNotification(Notification notice) {
-        if (emitters.isEmpty()) {
-            log.info("발송할 대상(SSE 구독자)이 없습니다.");
-            return;
-        }
+        if (emitters.isEmpty()) return;
 
         emitters.forEach((id, emitter) -> {
             try {
-                emitter.send(SseEmitter.event()
-                        .name("notice")
-                        .data(notice));
+                emitter.send(SseEmitter.event().name("notice").data(notice));
             } catch (Exception e) {
-                log.warn("SSE 전송 실패, 유저 {}의 연결을 제거합니다.", id);
                 emitters.remove(id);
             }
         });

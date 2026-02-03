@@ -1,10 +1,10 @@
 package com.bssm.meal.admin.controller;
 
 import com.bssm.meal.admin.dto.AdminStatsResponse;
-import com.bssm.meal.admin.dto.UserDetailResponse; // 추가 필요
+import com.bssm.meal.admin.dto.UserDetailResponse;
 import com.bssm.meal.admin.service.AdminService;
 import com.bssm.meal.admin.service.NotificationService;
-import com.bssm.meal.service.EmailService;
+import com.bssm.meal.admin.service.EmailService;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
@@ -25,8 +25,7 @@ public class AdminController {
     private final EmailService emailService;
 
     /**
-     * ✅ [추가] 전체 사용자 목록 조회
-     * 프론트엔드의 UserManagement 컴포넌트에서 호출합니다.
+     * 전체 사용자 목록 조회
      */
     @GetMapping("/users")
     public ResponseEntity<List<UserDetailResponse>> getAllUsers() {
@@ -61,7 +60,6 @@ public class AdminController {
      */
     @DeleteMapping("/reports/{id}")
     public ResponseEntity<Void> deleteReport(@PathVariable Long id) {
-        // ✅ 수정: 서비스 로직 연결
         adminService.deleteReport(id);
         return ResponseEntity.ok().build();
     }
@@ -84,10 +82,23 @@ public class AdminController {
 
         return ResponseEntity.ok("신고 처리가 완료되었습니다.");
     }
+
+    @PatchMapping("/users/{id}/ban")
+    public ResponseEntity<String> toggleUserBan(
+            @PathVariable String id,
+            @RequestParam boolean status,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) Integer min){ // ✅ days 추가
+
+        // ✅ 서비스 호출 시 days 포함 (총 4개 인자)
+        adminService.updateUserBannedStatus(id, status, reason, min);
+
+        return ResponseEntity.ok(status ? "차단 완료" : "해제 완료");
+    }
 }
 
 /**
- * 요청/응답을 위한 DTO 클래스들
+ * 요청/응답을 위한 DTO 클래스
  */
 @Getter
 @NoArgsConstructor

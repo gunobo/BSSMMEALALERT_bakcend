@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -13,24 +14,19 @@ import java.util.List;
 @AllArgsConstructor
 public class UserDetailResponse {
 
-    private String id;               // 프론트의 u.id와 매칭
-    private String email;            // 프론트의 u.email과 매칭
+    private String id;               // 사용자 고유 ID
+    private String email;            // 이메일 주소
 
-    private List<String> allergies;  // 알레르기 목록 ["우유", "난류"]
-    private List<String> favoriteMenus; // 선호 메뉴 목록 ["마라탕", "치킨"]
+    // ✅ 구글 프로필 이름을 담기 위해 추가된 필드
+    private String userName;
+    private String googleId; // ✅ 추가
+    private String picture;
 
-    /**
-     * Entity를 DTO로 변환하는 정적 팩토리 메서드 (선택 사항)
-     * Service 계층에서 .map(UserDetailResponse::from) 처럼 깔끔하게 사용 가능합니다.
-     */
-    /*
-    public static UserDetailResponse from(User entity) {
-        return UserDetailResponse.builder()
-                .id(entity.getUserId())
-                .email(entity.getEmail())
-                .allergies(entity.getAllergies())
-                .favoriteMenus(entity.getFavoriteMenus())
-                .build();
-    }
-    */
+    // ✅ 관리자 페이지 차단 관리를 위한 필드들
+    private boolean banned;          // 차단 여부
+    private String banReason;        // 차단 사유
+    private LocalDateTime banExpiresAt; // 차단 만료 일시
+
+    private List<String> allergies;      // 알레르기 목록
+    private List<String> favoriteMenus;   // 선호 메뉴 목록
 }

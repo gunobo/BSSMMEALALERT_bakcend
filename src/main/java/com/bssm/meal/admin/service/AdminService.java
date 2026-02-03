@@ -1,21 +1,25 @@
 package com.bssm.meal.admin.service;
 
 import com.bssm.meal.admin.dto.AdminStatsResponse;
-import com.bssm.meal.admin.dto.UserDetailResponse; // ✅ DTO 추가
+import com.bssm.meal.admin.dto.UserDetailResponse;
 import com.bssm.meal.like.repository.LikeRepository;
+import com.bssm.meal.user.domain.User;
 import com.bssm.meal.user.repository.UserRepository;
 import com.bssm.meal.report.repository.ReportRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -23,17 +27,25 @@ public class AdminService {
 
     private final UserRepository userRepository;
     private final LikeRepository likeRepository;
-    private final ReportRepository reviewRepository; // (변수명은 유지하되 타입은 ReportRepository)
+    private final ReportRepository reviewRepository;
+    private final EmailService emailService;
 
     /**
-     * ✅ [추가] 관리자 페이지용 전체 사용자 상세 목록 조회
+     * 관리자 페이지용 전체 사용자 상세 목록 조회
      */
     public List<UserDetailResponse> getAllUsersForAdmin() {
         return userRepository.findAll().stream()
                 .map(user -> UserDetailResponse.builder()
-                        .id(user.getUserId()) // 또는 user.getId() (엔티티 필드명에 맞춰 수정)
+                        .id(String.valueOf(user.getId()))
                         .email(user.getEmail())
-                        // 리스트가 null일 경우 프론트 map 에러 방지를 위해 빈 리스트 처리
+                        // ✅ 이 부분이 누락되어 이름이 안 나왔던 것입니다!
+                        // 유저 엔티티의 name(구글 이름)을 DTO의 userName에 담습니다.
+                        .userName(user.getName())
+                        .googleId(user.getGoogleId()) // ✅ DB의 google_id 매핑
+                        .picture(user.getPicture())   // ✅ DB의 picture 매핑
+                        .banned(user.isBanned())
+                        .banReason(user.getBanReason())
+                        .banExpiresAt(user.getBanExpiresAt())
                         .allergies(Optional.ofNullable(user.getAllergies()).orElse(Collections.emptyList()))
                         .favoriteMenus(Optional.ofNullable(user.getFavoriteMenus()).orElse(Collections.emptyList()))
                         .build())
@@ -41,16 +53,12 @@ public class AdminService {
     }
 
     /**
-     * 리액트 관리자 페이지(AdminPage)에서 필요한 모든 통계 데이터를 한 번에 조회
+     * 리액트 관리자 페이지용 통계 데이터 조회
      */
     public AdminStatsResponse getOverallStats() {
-        // 1. 전체 사용자 수 조회
         long totalUsers = userRepository.count();
-
-        // 2. 오늘의 좋아요 수 조회
         long todayLikes = likeRepository.countByCreatedAtAfter(LocalDate.now().atStartOfDay());
 
-        // 3. 신고된 리뷰 목록 가공
         var reportedReviews = reviewRepository.findByIsReportedTrue().stream()
                 .map(r -> AdminStatsResponse.ReportDto.builder()
                         .id(r.getId())
@@ -61,7 +69,6 @@ public class AdminService {
                         .build())
                 .collect(Collectors.toList());
 
-        // 4. 인기 메뉴 TOP 5 가공
         var popularMenus = likeRepository.findTop5PopularMenus(PageRequest.of(0, 5))
                 .stream()
                 .map(r -> AdminStatsResponse.MenuStatsDto.builder()
@@ -80,9 +87,6 @@ public class AdminService {
                 .build();
     }
 
-    /**
-     * 신고 처리 (상태 변경)
-     */
     @Transactional
     public void processReport(Long reportId) {
         var review = reviewRepository.findById(reportId)
@@ -90,14 +94,49 @@ public class AdminService {
         review.setIsReported(false);
     }
 
-    /**
-     * ✅ [추가] 신고 게시글 삭제
-     */
     @Transactional
     public void deleteReport(Long reportId) {
         if (!reviewRepository.existsById(reportId)) {
             throw new IllegalArgumentException("삭제할 신고 내역이 존재하지 않습니다.");
         }
         reviewRepository.deleteById(reportId);
+    }
+
+    /**
+     * ✅ 사용자 차단/해제 처리 및 메일 발송
+     */
+    @Transactional
+    public void updateUserBannedStatus(String email, boolean status, String reason, Integer min) {
+        log.info("차단 상태 변경 요청 - 대상: {}, 상태: {}, 사유: {}, 기간(분): {}", email, status, reason, min);
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + email));
+
+        if (status) {
+            // 차단 설정
+            LocalDateTime expiresAt = null;
+            if (min != null && min > 0 && min < 999999) {
+                expiresAt = LocalDateTime.now().plusMinutes(min);
+            }
+
+            user.updateBannedStatus(true, reason, expiresAt);
+
+            try {
+                emailService.sendBanNotification(email, reason, expiresAt);
+            } catch (Exception e) {
+                log.error("차단 메일 발송 중 오류 발생: {}", e.getMessage());
+            }
+        } else {
+            // 차단 해제
+            user.updateBannedStatus(false, null, null);
+
+            try {
+                emailService.sendUnbanNotification(email);
+            } catch (Exception e) {
+                log.error("해제 메일 발송 중 오류 발생: {}", e.getMessage());
+            }
+        }
+
+        userRepository.save(user);
     }
 }
