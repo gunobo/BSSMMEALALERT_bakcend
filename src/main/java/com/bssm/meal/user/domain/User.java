@@ -97,4 +97,8 @@ public class User {
             this.favoriteMenus.addAll(newMenus);
         }
     }
+    public void setIsBanned(boolean isBanned) {
+        this.isBanned = isBanned;
+    }
+
 }

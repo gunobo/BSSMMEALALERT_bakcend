@@ -30,4 +30,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
      * ID 기준 최신 단건 조회
      */
     Optional<Notification> findFirstByOrderByIdDesc();
+
+//    long countByMealDate(String mealDate);
 }

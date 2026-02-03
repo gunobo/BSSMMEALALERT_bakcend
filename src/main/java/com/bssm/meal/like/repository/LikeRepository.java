@@ -83,4 +83,6 @@ public interface LikeRepository extends JpaRepository<MealLike, Long> {
      * ✅ 유저 ID로 모든 좋아요 엔티티 조회
      */
     List<MealLike> findByUserId(String userId);
+
+    long countByMealDate(String mealDate);
 }
