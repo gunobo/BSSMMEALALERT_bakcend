@@ -7,6 +7,7 @@ import com.bssm.meal.like.repository.LikeRepository;
 import com.bssm.meal.user.domain.User;
 import com.bssm.meal.user.repository.UserRepository;
 import com.bssm.meal.report.repository.ReportRepository;
+import com.bssm.meal.favorite.repository.FcmTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -33,25 +34,52 @@ public class AdminService {
     private final ReportRepository reviewRepository;
     private final CommentRepository commentRepository;
     private final EmailService emailService;
+    private final FcmTokenRepository fcmTokenRepository;
 
     /**
      * 관리자 페이지용 전체 사용자 상세 목록 조회
      */
     public List<UserDetailResponse> getAllUsersForAdmin() {
         return userRepository.findAll().stream()
-                .map(user -> UserDetailResponse.builder()
-                        .id(String.valueOf(user.getId()))
-                        .email(user.getEmail())
-                        .userName(user.getName())
-                        .googleId(user.getGoogleId())
-                        .picture(user.getPicture())
-                        .banned(user.isBanned())
-                        .banReason(user.getBanReason())
-                        .banExpiresAt(user.getBanExpiresAt())
-                        .allergies(Optional.ofNullable(user.getAllergies()).orElse(Collections.emptyList()))
-                        .favoriteMenus(Optional.ofNullable(user.getFavoriteMenus()).orElse(Collections.emptyList()))
-                        .build())
+                .map(this::convertToDetailResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 유저 검색 및 필터링 조회 (추가된 메서드)
+     */
+    public List<UserDetailResponse> getUsersByFilter(String type, String keyword) {
+        // 검색어가 없으면 전체 조회
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return getAllUsersForAdmin();
+        }
+
+        // 검색 타입에 따라 이름 혹은 이메일 변수 설정
+        String name = "username".equals(type) ? keyword : null;
+        String email = "email".equals(type) ? keyword : null;
+
+        // UserRepository에 추가한 findUsersByFilter 호출
+        return userRepository.findUsersByFilter(name, email).stream()
+                .map(this::convertToDetailResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * User 엔티티를 UserDetailResponse DTO로 변환하는 공통 로직
+     */
+    private UserDetailResponse convertToDetailResponse(User user) {
+        return UserDetailResponse.builder()
+                .id(String.valueOf(user.getId()))
+                .email(user.getEmail())
+                .userName(user.getName())
+                .googleId(user.getGoogleId())
+                .picture(user.getPicture())
+                .banned(user.isBanned())
+                .banReason(user.getBanReason())
+                .banExpiresAt(user.getBanExpiresAt())
+                .allergies(Optional.ofNullable(user.getAllergies()).orElse(Collections.emptyList()))
+                .favoriteMenus(Optional.ofNullable(user.getFavoriteMenus()).orElse(Collections.emptyList()))
+                .build();
     }
 
     /**
@@ -63,7 +91,7 @@ public class AdminService {
         long todayLikes = likeRepository.countByCreatedAtAfter(LocalDate.now().atStartOfDay());
         long totalComments = commentRepository.count();
 
-        // 1. 신고 내역 조회 (유저 정보가 존재할 경우만 매핑)
+        // 1. 신고 내역 조회
         var reportedReviews = reviewRepository.findByIsReportedTrue().stream()
                 .filter(r -> r.getUser() != null)
                 .map(r -> AdminStatsResponse.ReportDto.builder()
@@ -75,7 +103,7 @@ public class AdminService {
                         .build())
                 .collect(Collectors.toList());
 
-        // 2. 인기 메뉴 TOP 5 (좋아요 기준)
+        // 2. 인기 메뉴 TOP 5
         var popularMenus = likeRepository.findTop5PopularMenus(PageRequest.of(0, 5))
                 .stream()
                 .map(r -> AdminStatsResponse.MenuStatsDto.builder()
@@ -86,7 +114,7 @@ public class AdminService {
                         .build())
                 .collect(Collectors.toList());
 
-        // 3. 댓글 활성 메뉴 TOP 5 (댓글 수 기준)
+        // 3. 댓글 활성 메뉴 TOP 5
         var topCommentedMenus = commentRepository.findTopCommentedMenus(PageRequest.of(0, 5))
                 .stream()
                 .map(r -> AdminStatsResponse.CommentRankingDto.builder()
@@ -115,8 +143,6 @@ public class AdminService {
     private List<AdminStatsResponse.DailyStatsDto> getWeeklyTrendData() {
         List<AdminStatsResponse.DailyStatsDto> stats = new ArrayList<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
-
-        // 인덱스 1(월)~7(일)을 위해 0번은 빈 값으로 설정
         String[] dayNames = {"", "월", "화", "수", "목", "금", "토", "일"};
 
         for (int i = 6; i >= 0; i--) {
@@ -128,7 +154,6 @@ public class AdminService {
             long likeCount = 0;
 
             try {
-                // Repository에 해당 메서드들이 정의되어 있어야 합니다.
                 commentCount = commentRepository.countByMealDate(dateStr);
                 likeCount = likeRepository.countByMealDate(dateStr);
             } catch (Exception e) {
@@ -196,5 +221,20 @@ public class AdminService {
             }
         }
         userRepository.save(user);
+    }
+
+    @Transactional
+    public void forceLogoutUser(Long userId) {
+        // 1. 유저 확인
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+
+        // 2. FCM 토큰 삭제 (알림 차단)
+        fcmTokenRepository.deleteByUserId(userId);
+
+        // 3. (중요) Redis를 사용 중이라면 유저의 RefreshToken 삭제
+        // redisTemplate.delete("RT:" + user.getEmail());
+
+        log.info("🚫 유저 {} 강제 로그아웃 처리 완료", user.getEmail());
     }
 }

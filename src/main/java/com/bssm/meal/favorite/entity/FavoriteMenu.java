@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,4 +32,6 @@ public class FavoriteMenu {
 
     @ElementCollection
     private List<String> favoriteMenu = new ArrayList<>();
+
+    private LocalDate date;
 }

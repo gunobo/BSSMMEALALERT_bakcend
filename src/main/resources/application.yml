@@ -1,9 +1,19 @@
 server:
   port: 8080
+#
+#logging:
+#  level:
+#    root: INFO
+#    org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping: TRACE
+#    org.springframework.web: DEBUG
 
 spring:
   profiles:
     include: secret
+  servlet:
+    multipart:
+      max-file-size: 100MB         # 개별 파일 당 최대 용량
+      max-request-size: 100MB      # HTTP 요청 당 최대 전체 용량
 
   mail:
     host: smtp.gmail.com
@@ -24,3 +34,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
+
+neis:
+  api:
+    key: ${NEIS_API_KEY:5c2f9ee4dec94ff4a53bf00bb3c3df4e}
+    atpt-code: ${NEIS_ATPT_CODE:C10}
+    schul-code: ${NEIS_SCHOOL_CODE:7150658}

@@ -1,7 +1,7 @@
 package com.bssm.meal.admin.controller;
 
 import com.bssm.meal.admin.domain.Notification;
-import com.bssm.meal.admin.service.NotificationService;
+import com.bssm.meal.admin.service.AdminNotificationService;
 import com.bssm.meal.user.domain.User;
 import com.bssm.meal.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NoticeController {
 
-    private final NotificationService notificationService;
+    private final AdminNotificationService adminNotificationService;
     private final UserRepository userRepository;
 
     /**
@@ -28,7 +28,7 @@ public class NoticeController {
      */
     @GetMapping("/latest")
     public ResponseEntity<Notification> getLatestNotice() {
-        return ResponseEntity.ok(notificationService.getLatestNotice());
+        return ResponseEntity.ok(adminNotificationService.getLatestNotice());
     }
 
     /**
@@ -36,7 +36,7 @@ public class NoticeController {
      */
     @GetMapping("/all")
     public ResponseEntity<List<Notification>> getAllNotices() {
-        return ResponseEntity.ok(notificationService.getAllNotices());
+        return ResponseEntity.ok(adminNotificationService.getAllNotices());
     }
 
     /**
@@ -44,7 +44,7 @@ public class NoticeController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Notification> getNotice(@PathVariable Long id) {
-        return ResponseEntity.ok(notificationService.getNoticeById(id));
+        return ResponseEntity.ok(adminNotificationService.getNoticeById(id));
     }
 
     /**
@@ -56,7 +56,7 @@ public class NoticeController {
             @RequestPart("content") String content,
             @RequestPart(value = "file", required = false) MultipartFile file) {
 
-        return ResponseEntity.ok(notificationService.saveNoticeWithFile(title, content, file, false, "NOTICE"));
+        return ResponseEntity.ok(adminNotificationService.saveNoticeWithFile(title, content, file, false, "NOTICE"));
     }
 
     /**
@@ -72,7 +72,7 @@ public class NoticeController {
 
         log.info("📝 공지사항 수정 요청 - ID: {}", id);
         // NotificationService에 updateNoticeWithFile 메서드를 구현해야 합니다.
-        return ResponseEntity.ok(notificationService.updateNoticeWithFile(id, title, content, file));
+        return ResponseEntity.ok(adminNotificationService.updateNoticeWithFile(id, title, content, file));
     }
 
     /**
@@ -82,7 +82,7 @@ public class NoticeController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteNotice(@PathVariable Long id) {
         log.info("🗑️ 공지사항 삭제 요청 - ID: {}", id);
-        notificationService.deleteNotice(id);
+        adminNotificationService.deleteNotice(id);
         return ResponseEntity.noContent().build();
     }
 
@@ -107,6 +107,6 @@ public class NoticeController {
             }
         }
 
-        return notificationService.subscribe(user.getId());
+        return adminNotificationService.subscribe(user.getId());
     }
 }

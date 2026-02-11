@@ -1,4 +1,4 @@
-package com.bssm.meal.meal.dto;
+package com.bssm.meal.like.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

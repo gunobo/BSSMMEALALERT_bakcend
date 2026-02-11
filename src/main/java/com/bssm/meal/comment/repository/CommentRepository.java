@@ -56,4 +56,17 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
             "GROUP BY c.mealKey " +
             "ORDER BY COUNT(c) DESC")
     List<AdminStatsResponse.CommentRankingDto> findTopCommentedMenus(Pageable pageable);
+
+    @Query("SELECT c FROM Comment c WHERE " +
+            "(:username IS NULL OR :username = '' OR c.username LIKE %:username%) AND " +
+            "(:email IS NULL OR :email = '' OR c.email LIKE %:email%) AND " +
+            "(:mealDate IS NULL OR :mealDate = '' OR c.mealDate = :mealDate) AND " +
+            "(:mealType IS NULL OR :mealType = '' OR c.mealType = :mealType)")
+    Page<Comment> findAdminComments(
+            @Param("username") String username,
+            @Param("email") String email,
+            @Param("mealDate") String mealDate,
+            @Param("mealType") String mealType,
+            Pageable pageable
+    );
 }

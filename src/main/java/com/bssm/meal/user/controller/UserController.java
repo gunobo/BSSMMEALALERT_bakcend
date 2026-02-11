@@ -1,6 +1,9 @@
 package com.bssm.meal.user.controller;
 
 import com.bssm.meal.admin.service.EmailService;
+import com.bssm.meal.favorite.entity.FcmToken;
+import com.bssm.meal.favorite.repository.FcmTokenRepository;
+import com.bssm.meal.favorite.service.FcmService;
 import com.bssm.meal.user.domain.User;
 import com.bssm.meal.user.repository.UserRepository;
 import lombok.Getter;
@@ -25,6 +28,8 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final FcmService fcmService;
+    private final FcmTokenRepository fcmTokenRepository;
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     @Getter
@@ -32,14 +37,16 @@ public class UserController {
     public static class UpdateUserRequest {
         private List<String> allergies;
         private List<String> favoriteMenus;
+        private boolean allow_notifications;
+        private boolean allow_allergy_notifications;
+        private boolean allow_favorite_notifications;
     }
 
     /**
-     * ✅ 현재 로그인된 유저 정보 조회 및 자동 가입 처리
-     * 💡 신규 가입 시 즉시 메일 발송 로직 추가
+     * ✅ 현재 로그인된 유저 정보 조회
      */
     @GetMapping("/me")
-    @Transactional
+    @Transactional(readOnly = true)
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
         if (authentication == null) {
             log.warn("🚨 인증 정보가 없습니다.");
@@ -47,59 +54,28 @@ public class UserController {
         }
 
         String email;
-        String finalName = "사용자";
-        String finalPicture = "";
-
         if (authentication.getPrincipal() instanceof OAuth2User oAuth2User) {
             email = oAuth2User.getAttribute("email");
-            finalName = oAuth2User.getAttribute("name");
-            finalPicture = oAuth2User.getAttribute("picture");
         } else {
             email = authentication.getName();
         }
 
-        final String userEmail = email;
-        final String userName = finalName;
-        final String userPicture = finalPicture;
+        User user = userRepository.findByEmail(email).orElseThrow(() ->
+                new IllegalArgumentException("유저를 찾을 수 없습니다."));
 
-        // 🚀 핵심 변경: 유저가 없을 때(신규 가입) 가입시킨 후 바로 메일 발송
-        User user = userRepository.findByEmail(userEmail).orElseGet(() -> {
-            log.info("🆕 신규 유저 자동 가입 처리 시작: {}", userEmail);
-            User newUser = User.builder()
-                    .email(userEmail)
-                    .name(userName)
-                    .picture(userPicture)
-                    .role("USER")
-                    .build();
-
-            User savedUser = userRepository.save(newUser);
-
-            // 📧 가입과 동시에 웰컴 메일 발송 (유저가 메인으로 이동하기 전 실행됨)
-            try {
-                log.info("📧 신규 가입자 [{}]에게 웰컴 메일을 발송합니다.", userEmail);
-                emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
-            } catch (Exception e) {
-                log.error("📧 메일 발송 중 오류 발생 (하지만 가입은 유지): {}", e.getMessage());
-            }
-
-            return savedUser;
-        });
-
-        // ================= [차단 자동 해제 체크 로직] =================
+        // 차단 체크 로직
         if (user.isBanned()) {
             if (user.getBanExpiresAt() != null) {
                 if (LocalDateTime.now().isAfter(user.getBanExpiresAt())) {
                     user.updateBannedStatus(false, null, null);
                     userRepository.saveAndFlush(user);
-                    emailService.sendUnbanNotification(user.getEmail());
                 } else {
-                    return ResponseEntity.status(403).body("차단된 계정입니다. 만료 예정: " + user.getBanExpiresAt());
+                    return ResponseEntity.status(403).body("차단된 계정입니다.");
                 }
             } else {
-                return ResponseEntity.status(403).body("영구 차단된 계정입니다. 사유: " + user.getBanReason());
+                return ResponseEntity.status(403).body("영구 차단된 계정입니다.");
             }
         }
-        // ==========================================================
 
         return ResponseEntity.ok(Map.of(
                 "id", user.getId(),
@@ -108,29 +84,97 @@ public class UserController {
                 "role", user.getRole(),
                 "picture", user.getPicture() != null ? user.getPicture() : "",
                 "allergies", user.getAllergies() != null ? user.getAllergies() : List.of(),
-                "favoriteMenus", user.getFavoriteMenus() != null ? user.getFavoriteMenus() : List.of()
+                "favoriteMenus", user.getFavoriteMenus() != null ? user.getFavoriteMenus() : List.of(),
+                "allow_notifications", user.isAllow_notifications(),
+                "allow_allergy_notifications", user.isAllow_allergy_notifications(),
+                "allow_favorite_notifications", user.isAllow_favorite_notifications()
         ));
     }
 
     /**
-     * ✅ 알레르기 및 선호 메뉴 정보 업데이트 (기존 메일 로직 제거 가능)
+     * ✅ 정보 업데이트 (유저 설정 + 모든 토큰 설정 동기화)
      */
     @PostMapping("/update-info")
     @Transactional
     public ResponseEntity<?> updateUserInfo(@RequestBody UpdateUserRequest request, Authentication authentication) {
-        log.info("📢 정보 업데이트 요청 수신");
+        log.info("📢 정보 업데이트 요청 수신 - 알림상태: {}", request.isAllow_notifications());
 
         if (authentication == null) return ResponseEntity.status(401).body("로그인이 필요합니다.");
-        String email = authentication.getName();
+
+        String email = (authentication.getPrincipal() instanceof OAuth2User oAuth2User)
+                ? oAuth2User.getAttribute("email")
+                : authentication.getName();
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("유저 정보가 존재하지 않습니다."));
 
-        if (request.getAllergies() != null) user.updateAllergies(request.getAllergies());
-        if (request.getFavoriteMenus() != null) user.updateFavoriteMenus(request.getFavoriteMenus());
-
+        // 1️⃣ User 테이블 업데이트
+        user.updateInfo(
+                request.getAllergies(),
+                request.getFavoriteMenus(),
+                request.isAllow_notifications(),
+                request.isAllow_allergy_notifications(),
+                request.isAllow_favorite_notifications()
+        );
         userRepository.saveAndFlush(user);
 
+        // 2️⃣ FcmToken 테이블 업데이트 (해당 유저의 모든 기기 동기화)
+        List<FcmToken> userTokens = fcmTokenRepository.findAllByUserId(user.getId());
+        for (FcmToken token : userTokens) {
+            token.setAllowNotifications(request.isAllow_notifications());
+        }
+        fcmTokenRepository.saveAll(userTokens);
+
+        log.info("✅ 유저 [{}]와 연결된 모든 토큰의 알림 상태를 {}로 동기화 완료", email, request.isAllow_notifications());
+
         return ResponseEntity.ok(Map.of("message", "정보가 저장되었습니다."));
+    }
+
+    /**
+     * ✅ FCM 토큰 업데이트 (saveToken 파라미터 불일치 해결)
+     */
+    @PostMapping("/fcm/token")
+    @Transactional
+    public ResponseEntity<?> updateFcmToken(
+            Authentication authentication,
+            @RequestBody Map<String, String> request) {
+
+        if (authentication == null) return ResponseEntity.status(401).body("로그인이 필요합니다.");
+
+        String token = request.get("token");
+        // ✅ [수정] 프론트엔드에서 넘어오는 deviceType 수신 (기본값 WEB)
+        String deviceType = request.getOrDefault("deviceType", "WEB");
+
+        String email = (authentication.getPrincipal() instanceof OAuth2User oAuth2User)
+                ? oAuth2User.getAttribute("email")
+                : authentication.getName();
+
+        userRepository.findByEmail(email).ifPresentOrElse(u -> {
+            // ✅ [수정] fcmService.saveToken에 deviceType 인자를 추가하여 메서드 시그니처 일치시킴
+            fcmService.saveToken(u.getId(), token, deviceType);
+
+            // 저장된 토큰의 알림 설정을 유저의 현재 설정값으로 맞춤
+            fcmTokenRepository.findByToken(token).ifPresent(t -> {
+                t.setAllowNotifications(u.isAllow_notifications());
+                fcmTokenRepository.saveAndFlush(t);
+            });
+
+            log.info("✅ 유저 [{}]의 {} 토큰 저장 및 알림 설정({}) 동기화 완료", email, deviceType, u.isAllow_notifications());
+        }, () -> log.error("❌ 유저 찾기 실패"));
+
+        return ResponseEntity.ok(Map.of("message", "토큰 업데이트 성공"));
+    }
+
+    /**
+     * ✅ 로그아웃 시 토큰 삭제
+     */
+    @PostMapping("/logout-device")
+    @Transactional
+    public ResponseEntity<?> logoutDevice(@RequestBody Map<String, String> request) {
+        String token = request.get("token");
+        if (token != null && !token.isEmpty()) {
+            fcmService.deleteToken(token);
+        }
+        return ResponseEntity.ok(Map.of("message", "기기 로그아웃 성공"));
     }
 }

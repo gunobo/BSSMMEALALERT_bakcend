@@ -41,8 +41,8 @@ public class CommentService {
                         .mealType(c.getMealType())
                         .mealKey(c.getMealKey())
                         .content(c.getContent())
-                        .username(c.getUsername()) // 엔티티에 저장된 값 직접 사용
-                        .email(c.getEmail())       // 엔티티에 저장된 값 직접 사용
+                        .username(c.getUsername())
+                        .email(c.getEmail())
                         .createdAt(c.getCreatedAt() != null ? c.getCreatedAt().toString() : null)
                         .build())
                 .collect(Collectors.toList());
@@ -70,31 +70,49 @@ public class CommentService {
 
     /**
      * 관리자용: 필터링 및 검색 조회
+     * 프론트에서 넘어온 검색 조건에 따라 분기 처리하여 Repository 호출
      */
     @Transactional(readOnly = true)
     public Page<CommentDto> searchComments(String type, String keyword, String mealDate, String mealType, Pageable pageable) {
-        // 1. 리포지토리에서 필터링된 엔티티 페이지를 가져옴
-        Page<Comment> commentPage = commentRepository.findAllWithFilters(type, keyword, mealDate, mealType, pageable);
+        // 검색어(keyword)가 비어있으면 null로 처리하여 쿼리에서 무시되도록 함
+        String searchKeyword = (keyword == null || keyword.trim().isEmpty()) ? null : keyword;
 
-        // 2. 엔티티를 DTO로 변환
-        // comment.getUser().getName() 대신 엔티티의 getUsername()을 사용하는 것이 데이터 일관성에 좋습니다.
+        // type 값에 따라 이름(username) 또는 이메일(email) 필터 결정
+        String username = "username".equals(type) ? searchKeyword : null;
+        String email = "email".equals(type) ? searchKeyword : null;
+
+        // 리포지토리에서 @Query로 작성한 동적 필터 메서드 호출
+        Page<Comment> commentPage = commentRepository.findAdminComments(
+                username,
+                email,
+                (mealDate == null || mealDate.isEmpty()) ? null : mealDate,
+                (mealType == null || mealType.isEmpty()) ? null : mealType,
+                pageable
+        );
+
+        // 엔티티 페이지를 DTO 페이지로 변환
         return commentPage.map(c -> CommentDto.builder()
                 .id(c.getId())
                 .content(c.getContent())
                 .mealDate(c.getMealDate())
                 .mealType(c.getMealType())
-                .username(c.getUsername()) // Comment 엔티티의 필드 사용
-                .email(c.getEmail())       // Comment 엔티티의 필드 사용
+                .username(c.getUsername())
+                .email(c.getEmail())
                 .createdAt(c.getCreatedAt() != null ? c.getCreatedAt().toString() : "")
                 .build());
     }
 
+    /**
+     * 관리자용: 댓글 삭제
+     */
     @Transactional
     public void deleteComment(Long id) {
         commentRepository.deleteById(id);
     }
 
-    // 통계 기능 (필요시 AdminService와 통합 검토)
+    /**
+     * 통계 기능
+     */
     @Transactional(readOnly = true)
     public Map<String, Object> getCommentStats() {
         Map<String, Object> stats = new HashMap<>();

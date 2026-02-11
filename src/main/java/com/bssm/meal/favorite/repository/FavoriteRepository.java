@@ -5,6 +5,7 @@ import com.bssm.meal.user.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,4 +24,7 @@ public interface FavoriteRepository extends JpaRepository<FavoriteMenu, Long> {
 
     // MenuName -> Name 으로 수정
     void deleteByUserAndName(User user, String name);
+
+//    List<FavoriteMenu> findByDate(LocalDate date);
+    List<FavoriteMenu> findByName(String name);
 }
