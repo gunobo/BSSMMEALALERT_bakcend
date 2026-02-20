@@ -4,14 +4,16 @@ import com.bssm.meal.like.entity.MealLike;
 import com.bssm.meal.like.dto.RankingResponse;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying; // 추가
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+@Repository
 public interface LikeRepository extends JpaRepository<MealLike, Long> {
 
     // [기존 1번] 좋아요 토글 및 중복 체크용
@@ -24,7 +26,7 @@ public interface LikeRepository extends JpaRepository<MealLike, Long> {
             "WHERE l.userId = :userId AND l.userId IS NOT NULL")
     List<String> findLikedKeysByUserId(@Param("userId") String userId);
 
-    // [기존 3번] 통계용: 특정 메뉴의 전체 좋아요 수 (MealService 에러 해결용)
+    // [기존 3번] 통계용: 특정 메뉴의 전체 좋아요 수
     long countByMealKey(String mealKey);
 
     // [기존 4번] 특정 유저의 좋아요 여부
@@ -63,7 +65,7 @@ public interface LikeRepository extends JpaRepository<MealLike, Long> {
     List<RankingResponse> findRecentRanking(@Param("startDate") LocalDateTime startDate, Pageable pageable);
 
     /**
-     * ✅ 특정 날짜의 메뉴별 좋아요 수 조회 (Object[] 대신 DTO 활용 권장하나 일단 유지)
+     * ✅ 특정 날짜의 메뉴별 좋아요 수 조회
      */
     @Query("SELECT l.mealKey, COUNT(l) " +
             "FROM MealLike l " +
@@ -77,12 +79,22 @@ public interface LikeRepository extends JpaRepository<MealLike, Long> {
      */
     @Modifying
     @Query("DELETE FROM MealLike l WHERE l.userId = :userId")
-    void deleteByUserId(@Param("userId") String userId);
+    int deleteByUserId(@Param("userId") String userId);
 
     /**
      * ✅ 유저 ID로 모든 좋아요 엔티티 조회
      */
     List<MealLike> findByUserId(String userId);
 
+    /**
+     * ✅ 특정 날짜의 좋아요 수
+     */
     long countByMealDate(String mealDate);
+
+    /**
+     * ✅ 유저 ID로 좋아요 개수 조회 (Native Query 사용)
+     * 'Like'는 SQL 예약어라서 Native Query로 처리
+     */
+    @Query(value = "SELECT COUNT(*) FROM meal_like WHERE user_id = :userId", nativeQuery = true)
+    int countByUserId(@Param("userId") String userId);
 }

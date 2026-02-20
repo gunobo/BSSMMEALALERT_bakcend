@@ -1,5 +1,9 @@
 server:
   port: 8080
+  forward-headers-strategy: native
+  tomcat:
+    # 대용량 파일 전송 시 연결이 끊기지 않도록 타임아웃을 넉넉히 설정 (30초)
+    connection-timeout: 30000
 #
 #logging:
 #  level:
@@ -12,8 +16,10 @@ spring:
     include: secret
   servlet:
     multipart:
+      enabled: true
       max-file-size: 100MB         # 개별 파일 당 최대 용량
       max-request-size: 100MB      # HTTP 요청 당 최대 전체 용량
+      file-size-threshold: 0
 
   mail:
     host: smtp.gmail.com
@@ -27,13 +33,20 @@ spring:
           timeout: 5000
 
   jpa:
-    open-in-view: false  # 👈 이 줄을 추가해 주세요!
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
+
+  data:
+    profiles:
+      include: secret
+    redis:
+      host: localhost
+      port: 6379
 
 neis:
   api:

@@ -5,8 +5,10 @@ import com.bssm.meal.comment.domain.Comment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -69,4 +71,14 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
             @Param("mealType") String mealType,
             Pageable pageable
     );
+
+    @Query(value = "SELECT COUNT(*) FROM comment WHERE username = :userId", nativeQuery = true)
+    int countByUserId(@Param("userId") String userId);
+
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM comment WHERE username = :userId", nativeQuery = true)
+    int deleteByUserId(@Param("userId") String userId); // 👈 @Param("user")를 "userId"로 수정
+
+    List<Comment> findByUsername(String username);
 }

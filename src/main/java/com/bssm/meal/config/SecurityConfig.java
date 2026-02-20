@@ -27,7 +27,6 @@ public class SecurityConfig {
 
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
-        // 정적 자원들은 보안 필터를 아예 거치지 않도록 설정 (성능 최적화)
         return (web) -> web.ignoring()
                 .requestMatchers("/", "/favicon.ico", "/error", "/uploads/**", "/static/**", "/css/**", "/js/**");
     }
@@ -35,50 +34,69 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // 1. CSRF 비활성화
                 .csrf(AbstractHttpConfigurer::disable)
-
-                // 2. CORS 설정 적용
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // 3. 세션 미사용 (JWT 방식)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // 4. 권한 설정
                 .authorizeHttpRequests(auth -> auth
-                        // OPTIONS 요청은 모두 허용 (CORS Preflight 대응)
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // [공개 경로] 인증 없이 접근 가능
+                        // ============================================
+                        // 1. [공개 경로] 최상단 배치
+                        // ============================================
                         .requestMatchers("/api/auth/**", "/auth/**", "/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/api/meals/**", "/api/likes/ranking", "/api/main/**").permitAll()
                         .requestMatchers("/api/notifications/latest", "/api/notifications/subscribe/**").permitAll()
+                        .requestMatchers("/api/admin/app/download/**").permitAll()
 
-                        // ✅ [앱 다운로드 경로] 누구나 클릭해서 다운로드할 수 있어야 함 (통계 집계용)
-                        .requestMatchers("/admin/app/download/**").permitAll()
+                        // ============================================
+                        // 2. [관리자 전용] - ADMIN만 접근 가능
+                        // ============================================
 
-                        // ✅ [관리자 전용 앱 설정] 업로드 및 통계 조회는 ADMIN만 가능하게 설정
-                        .requestMatchers("/admin/app/upload", "/admin/app/stats").hasRole("ADMIN")
+                        // 👥 사용자 관리 - 관리자만
+                        .requestMatchers("/api/admin/users/**").hasAnyAuthority("ROLE_ADMIN", "ADMIN")
 
-                        // [관리자 알림 경로] 테스트 및 정상 작동을 위해 permitAll로 임시 개방
-                        .requestMatchers("/api/admin/notification/**").permitAll()
+                        // 📱 앱 업로드 - 관리자만
+                        .requestMatchers("/api/admin/app/upload", "/api/admin/app/stats")
+                        .hasAnyAuthority("ROLE_ADMIN", "ADMIN")
 
-                        // [사용자/관리자 공통]
+                        // ============================================
+                        // 3. [관리자 + 운영자] - ADMIN, MODERATOR 접근 가능
+                        // ============================================
+
+                        // 🚨 신고 관리
+                        .requestMatchers("/api/admin/reports/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ADMIN", "ROLE_MODERATOR", "MODERATOR")
+
+                        // 🔔 알림 관리
+                        .requestMatchers("/api/admin/notification/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ADMIN", "ROLE_MODERATOR", "MODERATOR")
+
+                        // 📊 통계 조회
+                        .requestMatchers("/api/admin/stats/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ADMIN", "ROLE_MODERATOR", "MODERATOR")
+
+                        // ============================================
+                        // 4. [나머지 관리자 경로] - 위에서 매칭 안된 경로
+                        // ============================================
+                        .requestMatchers("/api/admin/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ADMIN", "ROLE_MODERATOR", "MODERATOR")
+
+                        // ============================================
+                        // 5. [사용자/관리자 공통]
+                        // ============================================
                         .requestMatchers("/api/user/update-info").hasAnyRole("USER", "ADMIN")
 
-                        // [인증 필요 경로]
-                        .requestMatchers("/api/fcm/**").authenticated()
-                        .requestMatchers("/api/users/fcm-token").authenticated()
-                        .requestMatchers("/api/user/**", "/api/likes/toggle", "/api/likes/user/**").authenticated()
+                        // ============================================
+                        // 6. [인증 필요 경로]
+                        // ============================================
+                        .requestMatchers("/api/fcm/**", "/api/users/fcm-token", "/api/user/**", "/api/likes/toggle", "/api/likes/user/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/reports").authenticated()
 
-                        // [기타 관리자 경로]
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                        // 그 외 모든 요청 허용 (성공 확인용)
+                        // ============================================
+                        // 7. [기타]
+                        // ============================================
                         .anyRequest().permitAll()
                 )
-                // 5. JWT 필터 추가
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -87,15 +105,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
-        // 요청 허용 도메인
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:5173",
                 "http://127.0.0.1:5173",
                 "https://bssm.imjemin.co.kr",
                 "https://api.imjemin.co.kr"
         ));
-
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

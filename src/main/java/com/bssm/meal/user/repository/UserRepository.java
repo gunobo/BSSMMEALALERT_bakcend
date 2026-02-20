@@ -1,5 +1,6 @@
 package com.bssm.meal.user.repository;
 
+import com.bssm.meal.user.domain.DeleteRequest;
 import com.bssm.meal.user.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -8,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,17 +34,22 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("email") String email
     );
 
-    // ✅ 수정: Java 필드명(camelCase) 사용
     @Query("SELECT u FROM User u WHERE u.allowNotifications = true")
     List<User> findByAllowNotificationsTrue();
 
-    // ✅ 추가: 알레르기 알림 활성화 유저 조회
     @Query("SELECT u FROM User u WHERE u.allowAllergyNotifications = true")
     List<User> findByAllowAllergyNotificationsTrue();
 
-    // ✅ 추가: 선호 메뉴 알림 활성화 유저 조회
     @Query("SELECT u FROM User u WHERE u.allowFavoriteNotifications = true")
     List<User> findByAllowFavoriteNotificationsTrue();
 
     List<User> findByEmailIn(List<String> emails);
+
+    boolean existsByEmail(String email);
+
+    /**
+     * ✅ 차단된 사용자 조회
+     * User 엔티티의 필드명이 isBanned이므로 findByIsBanned 사용
+     */
+    List<User> findByIsBanned(Boolean isBanned);
 }
